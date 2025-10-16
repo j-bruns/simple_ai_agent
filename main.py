@@ -110,7 +110,7 @@ def call_function(function_call_part, verbose=False):
         result = write_file(**args)
     else:
         return types.Content(
-        role="tool",
+        role="model",
         parts=[
             types.Part.from_function_response(
                 name=function_call_part.name,
@@ -121,7 +121,7 @@ def call_function(function_call_part, verbose=False):
     if not isinstance(result, dict):
         result = {"result": result}
     return types.Content(
-        role="tool",
+        role="model",
         parts=[types.Part.from_function_response(
             name=name,
             response=result,
