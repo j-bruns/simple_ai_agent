@@ -1,22 +1,48 @@
 import os
 import subprocess
-def run_python_file(working_directory, file_path, args=[]):
-    try:      
+from google import genai
+
+schema_run_python_file = genai.types.FunctionDeclaration(
+    name="run_python_file",
+    description="Execute a Python file with optional arguments, constrained to the working directory.",
+    parameters=genai.types.Schema(
+        type=genai.types.Type.OBJECT,
+        properties={
+            "file_path": genai.types.Schema(type=genai.types.Type.STRING, description="Relative Python file path"),
+            "args": genai.types.Schema(
+                type=genai.types.Type.ARRAY,
+                items=genai.types.Schema(type=genai.types.Type.STRING),
+                description="Optional CLI arguments",
+            ),
+        },
+        required=["file_path"],
+    ),
+)
+
+def run_python_file(working_directory, file_path, args=None):
+    try:
+        args = args or []
         wd = os.path.abspath(working_directory)
-        target = os.path.abspath(os.path.join(wd, file_path) if not os.path.isabs(file_path) else file_path)
-        if not os.path.commonpath([wd, target]) == wd:
-            return(f'Error: Cannot execute "{file_path}" as it is outside the permitted working directory')
-        elif not os.path.exists(target):
-            return f'Error: File "{file_path}" not found.'
-        elif not target.endswith(".py"):
-            return(f'Error: "{file_path}" is not a Python file.')
-        else:
-            process = subprocess.run(["python3",target,*args],timeout=30,capture_output=True,cwd = wd)
-            if process.returncode != 0:
-                return f"STDOUT: {process.stdout.decode()}\nSTDERR: {process.stderr.decode()}\nProcess exited with code {process.returncode}"
-            elif len(process.stdout.decode()) == 0 and len(process.stderr.decode()) == 0:
-                return f"No output produced."
-            else:
-                return f"STDOUT: {process.stdout.decode()}\nSTDERR: {process.stderr.decode()}"
+        target = os.path.abspath(os.path.join(wd, file_path))
+        if os.path.commonpath([wd, target]) != wd:
+            return {"error": f'Cannot execute "{file_path}" as it is outside the permitted working directory'}
+        if not os.path.exists(target):
+            return {"error": f'File "{file_path}" not found.'}
+        if not target.endswith(".py"):
+            return {"error": f'"{file_path}" is not a Python file.'}
+        proc = subprocess.run(
+            ["python3", target, *args],
+            timeout=30,
+            capture_output=True,
+            cwd=wd,
+            text=True,
+        )
+        return {
+            "file_path": file_path,
+            "args": args,
+            "returncode": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+        }
     except Exception as e:
-        return(f"Error: executing Python file: {e}")
+        return {"error": f"executing Python file: {e}"}
