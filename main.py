@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from config import MAX_ITERATIONS
+
 from functions.get_files_info import schema_get_files_info
 from functions.get_file_content import schema_get_file_content
 from functions.run_python_file import schema_run_python_file
@@ -27,6 +29,7 @@ When a user asks a question or makes a request, make a function call plan. You c
 - Write or overwrite files
 
 All paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.
+ONLY give text output at the very end, when you are finished with all function calls, before that only do function calls.
 """
 
 client = genai.Client(api_key=api_key)
@@ -44,31 +47,46 @@ def main():
     if len(sys.argv) <= 1:
         sys.exit(1)
     user_prompt = sys.argv[1]
+
     messages = [
     types.Content(role="user", parts=[types.Part(text=user_prompt)]),
     ]
-    response = client.models.generate_content(
-        model="gemini-2.0-flash-001",
-        contents=messages,
-        config = types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            tools=[available_functions]
+    counter = 0
+    while counter < MAX_ITERATIONS:
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.0-flash-001",
+                contents=messages,
+                config = types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    tools=[available_functions]
+                    )
             )
-    )
-    if "--verbose" in sys.argv:
-        print(f"User prompt: {user_prompt}")
-        metadata = dict(response.usage_metadata)
-        print(f"Prompt tokens: {metadata['prompt_token_count']}")
-        print(f"Response tokens: {metadata['candidates_token_count']}")
-    if response.function_calls:
-        for function_call in response.function_calls:
-           reply = call_function(function_call, "--verbose" in sys.argv)
-           if not reply.parts[0].function_response.response:
-               raise Exception("Fatal Error while executing function.")
-           elif not reply.parts[0].function_response.response is None and "--verbose" in sys.argv:
-               print(f"-> {reply.parts[0].function_response.response}")
-    if response.text:
-        print(f"AI Output: {response.text.strip()}")
+            for candidate in response.candidates:
+                messages.append(candidate.content)
+
+            if "--verbose" in sys.argv:
+                print(f"User prompt: {user_prompt}")
+                metadata = dict(response.usage_metadata)
+                print(f"Prompt tokens: {metadata['prompt_token_count']}")
+                print(f"Response tokens: {metadata['candidates_token_count']}")
+
+            if response.function_calls:
+                for function_call in response.function_calls:
+                    reply = call_function(function_call, "--verbose" in sys.argv)
+                    messages.append(reply)             
+                    if not reply.parts[0].function_response.response:
+                        raise Exception("Fatal Error while executing function.")
+                    elif not reply.parts[0].function_response.response is None and "--verbose" in sys.argv:
+                        print(f"-> {reply.parts[0].function_response.response}")
+            else:
+                if response.text:
+                    print(f"Final Output: {response.text.strip()}")
+                    break
+            counter += 1
+
+        except Exception as e:
+            raise Exception(f"Error: {e}")
 
 
 
